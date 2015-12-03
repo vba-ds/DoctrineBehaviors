@@ -3,34 +3,76 @@
 [![Build Status](https://secure.travis-ci.org/KnpLabs/DoctrineBehaviors.png)](http://travis-ci.org/KnpLabs/DoctrineBehaviors)
 
 
-This php 5.4+ library is a collection of traits
+This PHP `>=5.4` library is a collection of traits and interfaces
 that add behaviors to Doctrine2 entites and repositories.
 
 It currently handles:
 
- * [tree](#tree)
- * [translatable](#translatable)
- * [timestampable](#timestampable)
- * [softDeletable](#softDeletable)
  * [blameable](#blameable)
- * [loggable](#loggable)
- * [geocodable](#geocodable)
  * [filterable](#filterable)
+ * [geocodable](#geocodable)
+ * joinable
+ * [loggable](#loggable)
  * [sluggable](#sluggable)
+ * [softDeletable](#softDeletable)
+ * sortable
+ * [timestampable](#timestampable)
+ * [translatable](#translatable)
+ * [tree](#tree)
 
 ## Notice:
 
 Some behaviors (translatable, timestampable, softDeletable, blameable, geocodable) need Doctrine subscribers in order to work.
 Make sure to activate them by reading the [Subscribers](#subscribers) section.
 
+##Installation
+```composer require knplabs/doctrine-behaviors:~1.1```
+
+## Configuration
+By default, when integrated with Symfony, all subscribers are enabled (if you don't specify any configuration for the bundle).
+But you can enable behaviors you need in a whitelist manner:
+```yaml
+knp_doctrine_behaviors:
+    blameable:      false
+    geocodable:     ~     # Here null is converted to false
+    loggable:       ~
+    sluggable:      true
+    soft_deletable: true
+    # All others behaviors are disabled
+```
 
 <a name="subscribers" id="subscribers"></a>
 ## Subscribers
 
-If you use symfony2, you can easily register them by importing a service definition file:
+If you use symfony2, you can easily register them in:
+
+- *Recommended way:*
+
+Add to AppKernel
+
+```php
+class AppKernel
+{
+    function registerBundles()
+    {
+        $bundles = array(
+            //...
+            new Knp\DoctrineBehaviors\Bundle\DoctrineBehaviorsBundle(),
+            //...
+        );
+
+        //...
+
+        return $bundles;
+    }
+}
+
+```
+
+- *Deprecated way:*
+Importing a service definition file:
 
 ``` yaml
-
     # app/config/config.yml
     imports:
         - { resource: ../../vendor/knplabs/doctrine-behaviors/config/orm-services.yml }
@@ -41,7 +83,6 @@ You can also register them using doctrine2 api:
 
 
 ``` php
-
 <?php
 
 $em->getEventManager()->addEventSubscriber(new \Knp\DoctrineBehaviors\ORM\Translatable\TranslatableSubscriber);
@@ -55,7 +96,6 @@ $em->getEventManager()->addEventSubscriber(new \Knp\DoctrineBehaviors\ORM\Transl
 All you have to do is to define a Doctrine2 entity and use traits:
 
 ``` php
-
 <?php
 
 use Doctrine\ORM\Mapping as ORM;
@@ -66,14 +106,15 @@ use Knp\DoctrineBehaviors\Model as ORMBehaviors;
  */
 class Category implements ORMBehaviors\Tree\NodeInterface, \ArrayAccess
 {
-    use ORMBehaviors\Tree\Node,
-        ORMBehaviors\Translatable\Translatable,
-        ORMBehaviors\Timestampable\Timestampable,
-        ORMBehaviors\SoftDeletable\SoftDeletable,
-        ORMBehaviors\Blameable\Blameable,
+    use ORMBehaviors\Blameable\Blameable,
         ORMBehaviors\Geocodable\Geocodable,
         ORMBehaviors\Loggable\Loggable,
-        ORMBehaviors\Sluggable\Sluggable
+        ORMBehaviors\Sluggable\Sluggable,
+        ORMBehaviors\SoftDeletable\SoftDeletable,
+        ORMBehaviors\Sortable\Sortable,
+        ORMBehaviors\Timestampable\Timestampable,
+        ORMBehaviors\Translatable\Translatable,
+        ORMBehaviors\Tree\Node
     ;
 
     /**
@@ -90,7 +131,6 @@ class Category implements ORMBehaviors\Tree\NodeInterface, \ArrayAccess
 For some behaviors like tree, you can use repository traits:
 
 ``` php
-
 <?php
 
 use Doctrine\ORM\EntityRepository;
@@ -111,7 +151,6 @@ You now have a working `Category` that behaves like:
 ### tree:
 
 ``` php
-
 <?php
 
     $category = new Category;
@@ -119,7 +158,7 @@ You now have a working `Category` that behaves like:
     $child = new Category;
     $child->setId(2);
 
-    $child->setChildOf($category);
+    $child->setChildNodeOf($category);
 
     $em->persist($child);
     $em->persist($category);
@@ -127,26 +166,28 @@ You now have a working `Category` that behaves like:
 
     $root = $em->getRepository('Category')->getTree();
 
-    $root->getParent(); // null
+    $root->getParentNode(); // null
     $root->getChildNodes(); // ArrayCollection
     $root[0][1]; // node or null
-    $root->isLeaf(); // boolean
-    $root->isRoot(); // boolean
+    $root->isLeafNode(); // boolean
+    $root->isRootNode(); // boolean
 
 ```
+
+> it is possible to use another identifier than `id`, simply override `getNodeId` and return your custom identifier (works great in combination with `Sluggable`)
 
 <a name="translatable" id="translatable"></a>
 ### translatable:
 
-If you're working on a `Category` entity, the `Translatable` behavior expects a
-**CategoryTranslation** entity.  This naming convention avoids you to handle manually entity associations.
+If you're working on a `Category` entity, the `Translatable` behavior expects a **CategoryTranslation** entity in the 
+same folder of Category entity by default.
+
+The default naming convention (or its customization via trait methods) avoids you to manually handle entity associations.
 It is handled automatically by the TranslationSubscriber.
 
 In order to use the Translatable trait, you will have to create this `CategoryTranslation` entity.
 
-
 ``` php
-
 <?php
 
 use Doctrine\ORM\Mapping as ORM;
@@ -207,8 +248,9 @@ class CategoryTranslation
 The corresponding Category entity needs to `use ORMBehaviors\Translatable\Translatable;`
 and should only contain fields that you do not need to translate.
 
-```
+``` php
 <?php
+
 use Doctrine\ORM\Mapping as ORM;
 use Knp\DoctrineBehaviors\Model as ORMBehaviors;
 
@@ -227,10 +269,10 @@ class Category
 ```
 
 
-After updating the database, ie. with `./console doctrine:schema:update --force`, you can now work on translations using `translate` or `getTranslations` methods.
+After updating the database, ie. with `./console doctrine:schema:update --force`, 
+you can now work on translations using `translate` or `getTranslations` methods.
 
 ``` php
-
 <?php
 
     $category = new Category;
@@ -244,6 +286,79 @@ After updating the database, ie. with `./console doctrine:schema:update --force`
     $category->translate('en')->getName();
 
 ```
+
+#### Override
+
+In case you prefer to use a different class name for the translation entity, 
+or want to use a separate namespace, you have 2 ways :
+
+If you want to define a custom translation entity class name globally :  
+Override the trait `Translatable` and his  method `getTranslationEntityClass` 
+and the trait `Translation` and his method `getTranslatableEntityClass` in the translation entity. 
+If you override one, you also need to override the other to return the inverse class.
+
+Example: Let's say you want to create a sub namespace AppBundle\Entity\Translation to stock translations classes 
+then put overrided traits in that folder.
+
+``` php
+<?php
+namespace AppBundle\Entity\Translation;
+
+use Knp\DoctrineBehaviors\Model\Translatable\Translatable;
+use Symfony\Component\PropertyAccess\PropertyAccess;
+
+trait TranslatableTrait
+{
+    use Translatable;
+
+    /**
+     * @inheritdoc
+     */
+    public static function getTranslationEntityClass()
+    {
+        $explodedNamespace = explode('\\', __CLASS__);
+        $entityClass = array_pop($explodedNamespace);
+        return '\\'.implode('\\', $explodedNamespace).'\\Translation\\'.$entityClass.'Translation';
+    }
+}
+```
+
+``` php
+<?php
+namespace AppBundle\Entity\Translation;
+
+use Knp\DoctrineBehaviors\Model\Translatable\Translation;
+
+trait TranslationTrait
+{
+    use Translation;
+
+    /**
+     * @inheritdoc
+     */
+    public static function getTranslatableEntityClass()
+    {
+        $explodedNamespace = explode('\\', __CLASS__);
+        $entityClass = array_pop($explodedNamespace);
+        // Remove Translation namespace
+        array_pop($explodedNamespace);
+        return '\\'.implode('\\', $explodedNamespace).'\\'.substr($entityClass, 0, -11);
+    }
+}
+```
+
+If you use that way make sure you override trait parameters of DoctrineBehaviors :
+
+``` yaml
+parameters:
+    knp.doctrine_behaviors.translatable_subscriber.translatable_trait: AppBundle\Entity\Translation\TranslatableTrait
+    knp.doctrine_behaviors.translatable_subscriber.translation_trait: AppBundle\Entity\Translation\TranslationTrait
+```
+
+If you want to define a custom translation entity class name just for a single translatable class :  
+Override the trait method `getTranslationEntityClass` in the translatable entity and `getTranslatableEntityClass`
+in the translation entity. If you override one, you also need to override the other to return the inverse class.
+
 
 #### guess the current locale
 
@@ -259,22 +374,25 @@ You can use it in the magic `__call` method of you translatable entity
 so that when you try to call `getName` (for example) it will return you the translated value of the name for current locale:
 
 ``` php
-
 <?php
 
     public function __call($method, $arguments)
     {
         return $this->proxyCurrentLocaleTranslation($method, $arguments);
     }
-
+    
+    // or do it with PropertyAccessor that ships with Symfony SE
+    // if your methods don't take any required arguments
+    public function __call($method, $arguments)
+    {
+        return \Symfony\Component\PropertyAccess\PropertyAccess::createPropertyAccessor()->getValue($this->translate(), $method);
+    }
 ```
-
 
 <a name="softDeletable" id="softDeletable"></a>
 ### soft-deletable
 
 ``` php
-
 <?php
 
     $category = new Category;
@@ -288,32 +406,40 @@ so that when you try to call `getName` (for example) it will return you the tran
     $em->remove($category);
     $em->flush();
 
-    // hey, i'm still here:
+    // hey, I'm still here:
     $category = $em->getRepository('Category')->findOneById($id);
 
-    // but i'm "deleted"
+    // but I'm "deleted"
     $category->isDeleted(); // === true
+
+    // restore me
+    $category->restore();
+
+    //look ma, I am back
+    $category->isDeleted(); // === false
+
+    //do not forget to call flush method to apply the change
+    $em->flush();
 ```
 
 ``` php
-
 <?php
 
     $category = new Category;
     $em->persist($category);
     $em->flush();
 
-    // I'll delete you tomorow
+    // I'll delete you tomorrow
     $category->setDeletedAt((new \DateTime())->modify('+1 day'));
 
-    // Ok, I'm here
+    // OK, I'm here
     $category->isDeleted(); // === false
 
     /*
      *  24 hours later...
      */
 
-    // Ok I'm deleted
+    // OK, I'm deleted
     $category->isDeleted(); // === true
 ```
 
@@ -321,7 +447,6 @@ so that when you try to call `getName` (for example) it will return you the tran
 ### timestampable
 
 ``` php
-
 <?php
 
     $category = new Category;
@@ -350,22 +475,20 @@ Using symfony2, all you have to do is to configure the DI parameter named `%knp.
 for example:
 
     # app/config/config.yml
-
     parameters:
         knp.doctrine_behaviors.blameable_subscriber.user_entity: AppBundle\Entity\User
 
 Then, you can use it like that:
 
 ``` php
-
 <?php
 
     $category = new Category;
     $em->persist($category);
 
     // instances of %knp.doctrine_behaviors.blameable_subscriber.user_entity%
-    $creator = $em->getCreatedBy();
-    $updater = $em->getUpdatedBy();
+    $creator = $category->getCreatedBy();
+    $updater = $category->getUpdatedBy();
 
 ```
 
@@ -376,7 +499,6 @@ Loggable is able to track lifecycle modifications and log them using any third p
 A loggable [callable](#callables) is used to get the logger from anywhere you want.
 
 ``` php
-
 <?php
 
 /**
@@ -405,7 +527,6 @@ You can define your own, by passing another callable to the LoggableSubscriber:
 
 
 ``` php
-
 <?php
 
 $em->getEventManager()->addEventSubscriber(
@@ -433,11 +554,10 @@ If you're using symfony, you can also configure which callable to use:
 Geocodable Provides extensions to PostgreSQL platform in order to work with cube and earthdistance extensions.
 
 It allows you to query entities based on geographical coordinates.
-It also provides an easy entry point to use 3rd party libraries like the exellent [geocoder](https://github.com/willdurand/Geocoder) to transform addresses into latitude and longitude.
+It also provides an easy entry point to use 3rd party libraries like the excellent [geocoder](https://github.com/willdurand/Geocoder) to transform addresses into latitude and longitude.
 
 
 ``` php
-
 <?php
 
     $geocoder = new \Geocoder\Geocoder;
@@ -457,7 +577,7 @@ It also provides an easy entry point to use 3rd party libraries like the exellen
 
     $location = $category->getLocation(); // instanceof Point
 
-    // find cities in a cricle of 500 km around point 47 lon., 7 lat.
+    // find cities in a circle of 500 km around point 47 lon., 7 lat.
     $nearCities = $repository->findByDistance(new Point(47, 7), 500);
 
 ```
@@ -468,7 +588,8 @@ It also provides an easy entry point to use 3rd party libraries like the exellen
 Sluggable generates slugs (uniqueness is not guaranteed) for an entity.
 Will automatically generate on update/persist (you can disable the on update generation by overriding `getRegenerateSlugOnUpdate` to return false.
 You can also override the slug delimiter from the default hyphen by overriding `getSlugDelimiter`.
-Use cases include SEO (i.e. URLs like http://mysite.com/post/3/introduction-to-php)
+Slug generation algo can be changed by overriding `generateSlugValue`.
+Use cases include SEO (i.e. URLs like http://example.com/post/3/introduction-to-php)
 ```php
 <?php
 
@@ -490,6 +611,11 @@ class BlogPost
     public function getSluggableFields()
     {
         return [ 'title' ];
+    }
+
+    public function generateSlugValue($values)
+    {
+        return implode('-', $values);
     }
 }
 ```

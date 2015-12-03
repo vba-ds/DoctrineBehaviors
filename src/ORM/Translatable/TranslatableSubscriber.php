@@ -35,17 +35,20 @@ use Doctrine\DBAL\Platforms;
 class TranslatableSubscriber extends AbstractSubscriber
 {
     private $currentLocaleCallable;
+    private $defaultLocaleCallable;
     private $translatableTrait;
     private $translationTrait;
     private $translatableFetchMode;
     private $translationFetchMode;
 
     public function __construct(ClassAnalyzer $classAnalyzer, $isRecursive, callable $currentLocaleCallable = null,
-                                $translatableTrait, $translationTrait, $translatableFetchMode, $translationFetchMode)
+                                callable $defaultLocaleCallable = null,$translatableTrait, $translationTrait,
+                                $translatableFetchMode, $translationFetchMode)
     {
         parent::__construct($classAnalyzer, $isRecursive);
 
         $this->currentLocaleCallable = $currentLocaleCallable;
+        $this->defaultLocaleCallable = $defaultLocaleCallable;
         $this->translatableTrait = $translatableTrait;
         $this->translationTrait = $translationTrait;
         $this->translatableFetchMode = $this->convertFetchString($translatableFetchMode);
@@ -203,7 +206,7 @@ class TranslatableSubscriber extends AbstractSubscriber
                 'indexBy'       => 'locale',
                 'cascade'       => ['persist', 'merge', 'remove'],
                 'fetch'         => $this->translatableFetchMode,
-                'targetEntity'  => $classMetadata->name.'Translation',
+                'targetEntity'  => $classMetadata->getReflectionClass()->getMethod('getTranslationEntityClass')->invoke(null),
                 'orphanRemoval' => true
             ]);
         }
@@ -221,7 +224,7 @@ class TranslatableSubscriber extends AbstractSubscriber
                     'referencedColumnName' => 'id',
                     'onDelete'             => 'CASCADE'
                 ]],
-                'targetEntity' => substr($classMetadata->name, 0, -11)
+                'targetEntity' => $classMetadata->getReflectionClass()->getMethod('getTranslatableEntityClass')->invoke(null),
             ]);
         }
 
@@ -232,7 +235,7 @@ class TranslatableSubscriber extends AbstractSubscriber
             ];
         }
 
-        if (!$classMetadata->hasField('locale')) {
+        if (!($classMetadata->hasField('locale') || $classMetadata->hasAssociation('locale'))) {
             $classMetadata->mapField(array(
                 'fieldName' => 'locale',
                 'type'      => 'string'
@@ -296,6 +299,16 @@ class TranslatableSubscriber extends AbstractSubscriber
 
     public function postLoad(LifecycleEventArgs $eventArgs)
     {
+        $this->setLocales($eventArgs);
+    }
+
+    public function prePersist(LifecycleEventArgs $eventArgs)
+    {
+        $this->setLocales($eventArgs);
+    }
+
+    private function setLocales(LifecycleEventArgs $eventArgs)
+    {
         $em            = $eventArgs->getEntityManager();
         $entity        = $eventArgs->getEntity();
         $classMetadata = $em->getClassMetadata(get_class($entity));
@@ -307,12 +320,23 @@ class TranslatableSubscriber extends AbstractSubscriber
         if ($locale = $this->getCurrentLocale()) {
             $entity->setCurrentLocale($locale);
         }
+
+        if ($locale = $this->getDefaultLocale()) {
+            $entity->setDefaultLocale($locale);
+        }
     }
 
     private function getCurrentLocale()
     {
         if ($currentLocaleCallable = $this->currentLocaleCallable) {
             return $currentLocaleCallable();
+        }
+    }
+
+    private function getDefaultLocale()
+    {
+        if ($defaultLocaleCallable = $this->defaultLocaleCallable) {
+            return $defaultLocaleCallable();
         }
     }
 
@@ -326,6 +350,7 @@ class TranslatableSubscriber extends AbstractSubscriber
         return [
             Events::loadClassMetadata,
             Events::postLoad,
+            Events::prePersist,
         ];
     }
 }

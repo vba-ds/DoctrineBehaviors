@@ -13,9 +13,9 @@ use Doctrine\Common\Collections\Collection;
 interface NodeInterface
 {
     /**
-     * @return string the id that will represent the node in the path
+     * @return string the field that will represent the node in the path
      **/
-    public function getId();
+    public function getNodeId();
 
     /**
      * @return string the materialized path,
@@ -88,6 +88,11 @@ interface NodeInterface
      * @return bool if the node is a root (i.e has no parent)
      **/
     public function isRootNode();
+    
+    /**
+     * @return NodeInterface
+     **/
+    public function getRootNode();
 
     /**
      * Tells if this node is a child of another node
@@ -110,4 +115,3 @@ interface NodeInterface
      **/
     public function buildTree(array $nodes);
 }
-
